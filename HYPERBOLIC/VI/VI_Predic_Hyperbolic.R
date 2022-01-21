@@ -87,7 +87,7 @@ calc_post_pred <- function(tm, tsig, tus, ts_u, geom, M = 1000){
   return( ps_strg )
 }
 
-preds<-calc_post_pred(tst$tm, tst$tsig, tst$tus, tst$ts_u, "spherical", M = 1000)
+preds<-calc_post_pred(tst$tm, tst$tsig, tst$tus, tst$ts_u, "hyperbolic", M = 1000)
 
 
 
