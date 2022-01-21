@@ -1,82 +1,122 @@
-source('bbvi_spherical_vmf.R')
-###################### run code and plot output  ##################################
+smpl_us_from_q <- function(tm, tsig, tus, tu_s, geom, bk_id = c(1,2)){
+  # function to sample \alpha and z's from variational family
+  #print(tus)
+  ## sample \alpha
+  a_smp = rnorm( 1, tm, tsig )
+  
+  ## sample latent coordinates
+  N = dim( tus )[1]
+  
+  us_smp = array( NA, dim( tus ) )
+  #print(us_smp)
+  if (geom == "hyperbolic"){
+    
+    #us_smp[bk_id[1],] = tus[bk_id[1],]
+    us_smp[bk_id[1],] = tus[bk_id[1],]
+    #print(tus[i,])
+    #print(tu_s[i])
+    for (i in (1:N)[-bk_id[1]]){
+      us_smp[i,] = sample_from_RHN( 1, tus[i,], tu_s[i])
+    }
+    us_smp[bk_id[2],] = tus[bk_id[2],]
+    
+  } else if (geom == "spherical"){
+    
+    us_smp[bk_id[1],] = tus[bk_id[1],]
+    for (i in (1:N)[-bk_id[1]]){
+      us_smp[i,] = rmovMF( 1, matrix( tus[i,] * tu_s[i], nrow=1) )
+    }
+    us_smp[bk_id[2],] = tus[bk_id[2],]
+    
+  } else if (geom == "discrete"){
+    
+    us_smp[bk_id[1],] = tus[bk_id[1],]
+    for (i in (1:N)[-bk_id[1]]){
+      #us_smp[i,] = rmovMF( 1, matrix( tus[i,] * tu_s[i], nrow=1) )
+    }
+    us_smp[bk_id[2],2] = tus[bk_id[2],2]
+    
+  } else { stop("Invalid choice for geom")}
+  
+  return( list( alpha = a_smp, us = us_smp ) )
+}
 
-library(Directional)
-library(netrankr)
+calc_pij_vals <- function(alpha, us, geom){
+  
+  if ( (any( c("euclidean","hyperbolic", "spherical","discrete") == geom)) == FALSE ){
+    stop("Invalid choice for geom")
+  }
+  
+  N = dim(us)[1]
+  ps = matrix(0, N, N)
+  for (i in 1:(N-1)){
+    for (j in (i+1):N){
+      eta = alpha - sqrt((us[i,1]+ us[j,1])^2+(us[i,2]+ us[j,2])^2) 
+      ps[i,j] = 1 / ( 1 + exp(-eta))
+      ps[j,i] = ps[i,j]
+    }
+  }
+  
+  return(ps)
+}
 
- set.seed(1210)
- N = 15
- d = 3
- alpha = 1 # keep this here
- uprms = list(k=4, mn=c(0,1/sqrt(2),1/sqrt(2))) ## sample from von mises fisher
- netsmp = sample_network(N, d, alpha, uprms, "spherical", tau=.6) 
- 
- hist(netsmp$ds)
 
- clear3d() # just to visualise the network
- plot_coords_sphere(netsmp$us)
- g <- graph_from_adjacency_matrix( netsmp$ys, mode="undirected" )
- par(mfrow=c(1,1))
- plot( g, vertex.labels=1:N )
 
- 
-## ## populate prm_p
-# prms_p = list( us=netsmp$us, m=alpha, sig=2, k=uprms$k, mu=uprms$mn )
- 
- data(florentine_m) 
- florentine_m <- delete_vertices(florentine_m,which(degree(florentine_m)==0))
- 
- Y<-as_adjacency_matrix(florentine_m)
- 
- prms_p = list( us=netsmp$us, m=alpha, sig=2, k=2, mu=1 )
+calc_post_pred <- function(tm, tsig, tus, ts_u, geom, M = 1000){
+  # prm 1-4 are parameters of q
+  # geom = "hyperbolic", "spherical" indicates the geometry
+  # M is number of posterior samples
+  
+  ## create storage
+  N = dim( tus )[1]
+  ps_strg = array( NA, c(N,N,M) )
+  
+  for (m in 1:M){
+    
+    
+    ## sample from variational family
+    
+    smp = smpl_us_from_q(tm[m], tsig[m], tus[,,m], ts_u[,m], geom)
+    
+    ## calculate connection probabilities from sample
+    ps_strg[,,m] = calc_pij_vals(smp$alpha, smp$us, geom)
+  }
+  
+  
+  
+  return( ps_strg )
+}
 
-## ## ok - the problem is that the coordinates aren't guaranteed to be sampled at the center - could calculate this from the initialisation??
-## ## bit hacky but it would solve this issue!
+preds<-calc_post_pred(tst$tm, tst$tsig, tst$tus, tst$ts_u, "spherical", M = 1000)
 
-## ## run BBVI
- S = 10
- maxrep = 1000
- st_tim <- Sys.time()
- Rprof()
- tst = spherical_BBVI(Y, prms_p, S, maxrep)
- prms_p = tst$prms_p
- tst = tst$hst
- Rprof(NULL)
- end_tim <- Sys.time()
 
- summ = summaryRprof()
 
-## ## plot the output 
- pal = colorRampPalette(colors = c('grey', 'red'))
- cols = pal(maxrep+1)
- col_nodes = rainbow(N)
+get_upper_tris <- function(ys, preds){
+  id_uppertri = upper.tri( ys )
+  id_y1 = id_uppertri & (ys==1) # T if upper triangle and yij=1
+  id_y0 = id_uppertri & (ys==0) # T if upper triangle and yij=0
+  
+  ## extract upper triangles for each
+  M = dim(preds)[3]
+  p_y1 = matrix(NA, sum(id_y1), M)
+  p_y0 = matrix(NA, sum(id_y0), M)
+  for (m in 1:M){
+    ptmp = preds[,,m]
+    p_y1[,m] = ptmp[id_y1]
+    p_y0[,m] = ptmp[id_y0]
+  }
+  return( list(y1s=p_y1, y0s=p_y0) )
+}
 
- plt_rng = 1:(maxrep+1)
- plot_traces(tst, plt_rng, cols, col_nodes)
- plot_spherical_coords(tst$tu, plt_rng, col_nodes)
- spheres3d(prms_p$mu[1], prms_p$mu[2], prms_p$mu[3], col='red', radius=0.03) 
+dens_plot_pijs <- function(ys, preds){
+  preds = get_upper_tris( ys, preds )
+  
+  y1dens = density( preds$y1s )
+  y0dens = density( preds$y0s )
+  
+  plot( y1dens, col='black', ylim=c(0, max(c(y0dens$y, y1dens$y))), xlim=c(0,1), xlab="Predictive probability of a link", main="VI-Stein Predict Fit" )
+  lines( y0dens, col='red' ) 
+  legend("topright", legend=c("Yij=0", "Yij=1"), col=c('red', 'black'), lwd=1)
+}
 
-## ## ##########################################
-## ## sanity check isometry:
- us = (rmovMF( 10, 5*c(0,0,-1), alpha = 1))
- us_t = apply_isometry(us, t(c(0,0,1)))$us_t
-
-## ## need to close the plot! that's why it was looking awful
- spheres3d(0,0,0,lit=FALSE,color="white")
- spheres3d(0,0,0,radius=1.01,lit=FALSE,color="black",front="lines")
- spheres3d(us[,1], us[,2], us[,3], col='black', radius=0.03) 
- text3d(us[,1], us[,2], us[,3], 1:10, pos=3)
- spheres3d(us_t[,1], us_t[,2], us_t[,3], col='red', radius=0.03) 
- text3d(us_t[,1], us_t[,2], us_t[,3], 1:10, pos=3, col='red')
-
- ds = matrix(NA, 10, 10)
- ds_t = matrix(NA, 10, 10)
- for (i in 1:10){
-     for (j in 1:10){
-         if (i != j ){
-         ds[i,j] = acos( sum( us[i,]*us[j,] ) )
-         ds_t[i,j] = acos( sum( us_t[i,]*us_t[j,] ) )
-         }
-     }
- }
-## round(ds - ds_t, 2) ## should be 0's
+dens_plot_pijs(Y,preds)
