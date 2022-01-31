@@ -40,7 +40,7 @@ source("initialization.R")
 source("distances.R") 
 source("Random_Walks.R")
 source("updates_functions.R")
-source("sample_network_functions.R")
+#source("sample_network_functions.R")
 source("lnprior.R")
 
 
