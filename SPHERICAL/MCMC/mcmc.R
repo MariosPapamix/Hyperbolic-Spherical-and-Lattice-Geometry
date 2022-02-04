@@ -134,8 +134,8 @@ k<-2
 adelta<-.5          #params for
 zdelta<-.2          #proposal distribution
 
-nscan<-10^3         #number of scans   
-odens<-10^3         #save output every odens step
+nscan<-10^4         #number of scans   
+odens<-10         #save output every odens step
 
 aca<-acz<-0          #keep track of acceptance rates
 Alpha<-alpha        #keep track of alpha
@@ -144,15 +144,15 @@ Alpha<-alpha        #keep track of alpha
 #lik<-lpY(Y,Z,alpha,-100000,n) #keep track of alpha and likelihood 
 
 Z.post<-list()    #keep track of positions
-for(i in 1:k){ Z.post[[i]]<-t(Z[,i]) }
+for(i in 1:3){ Z.post[[i]]<-t(Z[,i]) }
 
 ## MCMC
 
 lik<-loglik
 
-lik_mat<-matrix(0,1000,1)
+lik_mat<-matrix(0,nscan,1)
 
-for(ns in 1:1000){
+for(ns in 1:nscan){
  
   print(ns)
   print(lik)
@@ -162,6 +162,8 @@ for(ns in 1:1000){
   acz<-acz+1/odens
 
   Z<-tmp$Z1
+  
+  #print(Z)
   
   lik<-tmp$lik
 
@@ -175,7 +177,7 @@ for(ns in 1:1000){
   
   Alpha<-c(Alpha,alpha)
   acz<-aca<-0 
-  for(i in 1:2){ Z.post[[i]]<-rbind(Z.post[[i]],t(Z[,i])) } 
+  for(i in 1:3){ Z.post[[i]]<-rbind(Z.post[[i]],t(Z[,i])) } 
   
   lik_mat[ns]<-lik
   
